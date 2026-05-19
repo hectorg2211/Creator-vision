@@ -107,6 +107,7 @@ function SuggestedPillarsPanel({
 }
 
 type MessageBoxProps = {
+  readOnly?: boolean;
   position: MessageBoxPosition;
   message: string;
   hasPillars: boolean;
@@ -137,6 +138,7 @@ const messageTextareaClass =
   "mt-2 w-full resize-none rounded-lg border border-violet-200 bg-white/90 px-2 py-1.5 text-sm text-zinc-900 outline-none ring-violet-500 placeholder:text-zinc-400 focus:ring-2";
 
 export function MessageBox({
+  readOnly = false,
   position,
   message,
   hasPillars,
@@ -193,7 +195,9 @@ export function MessageBox({
   const trimmedMessage = message.trim();
   const hasMessage = trimmedMessage.length > 0;
   const cardDisplayX = getMessageBoxCardDisplayX(position);
-  const wrapperLeft = getMessageBoxWrapperLeft(cardDisplayX);
+  const wrapperLeft = readOnly
+    ? cardDisplayX
+    : getMessageBoxWrapperLeft(cardDisplayX);
 
   useEffect(() => {
     const card = cardRef.current;
@@ -275,6 +279,7 @@ export function MessageBox({
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
+          {!readOnly ? (
           <div
             className="flex shrink-0 flex-col gap-2"
             style={{ width: MESSAGE_ACTION_COLUMN_WIDTH }}
@@ -332,6 +337,7 @@ export function MessageBox({
             </>
           )}
           </div>
+          ) : null}
 
         <div
           ref={setCardRef}
@@ -345,7 +351,15 @@ export function MessageBox({
             Message
           </p>
 
-          {!hasMessage || isEditing ? (
+          {readOnly ? (
+            <p
+              className={`board-text mt-2 text-sm leading-snug ${
+                hasMessage ? "" : "board-text-muted italic"
+              }`}
+            >
+              {hasMessage ? trimmedMessage : MESSAGE_PLACEHOLDER}
+            </p>
+          ) : !hasMessage || isEditing ? (
             <textarea
               ref={textareaRef}
               autoFocus={isEditing && hasMessage}
@@ -381,7 +395,7 @@ export function MessageBox({
             </p>
           ) : null}
 
-          {showReplaceConfirm && hasPillars ? (
+          {!readOnly && showReplaceConfirm && hasPillars ? (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/90 p-2 text-xs text-amber-900">
               <p className="font-medium">Replace existing pillars on the board?</p>
               <p className="mt-1 text-amber-800/90">
@@ -407,7 +421,7 @@ export function MessageBox({
             </div>
           ) : null}
 
-          {suggestedPillars.length > 0 ? (
+          {!readOnly && suggestedPillars.length > 0 ? (
             <SuggestedPillarsPanel
               key={suggestedPillars.join("\0")}
               pillars={suggestedPillars}
@@ -419,15 +433,17 @@ export function MessageBox({
         </div>
       </div>
 
-      <GenerateMessageDialog
-        open={wizardOpen}
-        isGenerating={isGeneratingMessage}
-        error={messageError}
-        onClose={() => {
-          setWizardOpen(false);
-        }}
-        onSubmit={handleWizardSubmit}
-      />
+      {!readOnly ? (
+        <GenerateMessageDialog
+          open={wizardOpen}
+          isGenerating={isGeneratingMessage}
+          error={messageError}
+          onClose={() => {
+            setWizardOpen(false);
+          }}
+          onSubmit={handleWizardSubmit}
+        />
+      ) : null}
     </>
   );
 }

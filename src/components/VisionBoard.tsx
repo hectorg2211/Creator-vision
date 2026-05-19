@@ -1,8 +1,9 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { BoardCanvas } from "@/components/BoardCanvas";
 import { useVisionStore } from "@/hooks/useVisionStore";
+import { copyTextToClipboard, createSharedBoardLink } from "@/lib/share-board-client";
 
 function useIsClient() {
   return useSyncExternalStore(
@@ -81,6 +82,11 @@ function VisionBoardLoaded() {
     suggestedPillars,
     clearSuggestedPillars,
   } = useVisionStore();
+
+  const handleShare = useCallback(async () => {
+    const url = await createSharedBoardLink(vision);
+    await copyTextToClipboard(url);
+  }, [vision]);
 
   return (
     <div className="h-screen overflow-hidden bg-zinc-100">
@@ -166,6 +172,7 @@ function VisionBoardLoaded() {
         onResizeEnd={endResizeHistory}
         onAddConnection={addConnection}
         onRemoveConnection={removeConnection}
+        onShare={handleShare}
       />
     </div>
   );

@@ -215,6 +215,7 @@ type PanSession = {
 };
 
 type BoardCanvasProps = {
+  readOnly?: boolean;
   message: string;
   messageBoxPosition?: MessageBoxPosition;
   contentPillarsBoxPosition?: ContentPillarsBoxPosition;
@@ -304,6 +305,7 @@ type BoardCanvasProps = {
     toAnchor: ConnectionAnchor,
   ) => void;
   onRemoveConnection: (connectionId: string) => void;
+  onShare?: () => void | Promise<void>;
 };
 
 const MARQUEE_MIN_SIZE = 4;
@@ -480,24 +482,58 @@ const BOARD_HINTS = [
 ] as const;
 
 type BoardFloatingToolbarProps = {
+  readOnly?: boolean;
   isDownloading: boolean;
+  isSharing: boolean;
+  shareMessage: string | null;
   onDownload: () => void;
+  onShare?: () => void;
   boardTheme: ReturnType<typeof useBoardTheme>["theme"];
   onBoardThemeChange: ReturnType<typeof useBoardTheme>["setTheme"];
 };
 
+function ShareIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+      <path d="M16 6l-4-4-4 4" />
+      <path d="M12 2v14" />
+    </svg>
+  );
+}
+
 function BoardFloatingToolbar({
+  readOnly = false,
   isDownloading,
+  isSharing,
+  shareMessage,
   onDownload,
+  onShare,
   boardTheme,
   onBoardThemeChange,
 }: BoardFloatingToolbarProps) {
   return (
-    <div
-      data-board-toolbar
-      data-export-hide
-      className="pointer-events-auto fixed top-4 right-4 z-50 flex items-center gap-1 rounded-xl border border-zinc-200/80 bg-white/90 p-1.5 shadow-lg backdrop-blur-md"
-    >
+    <div className="pointer-events-auto fixed top-4 right-4 z-50">
+      <div
+        data-board-toolbar
+        data-export-hide
+        className="relative flex w-fit max-w-[calc(100vw-2rem)] items-center gap-1 rounded-xl border border-zinc-200/80 bg-white/90 p-1.5 shadow-lg backdrop-blur-md"
+      >
+      {readOnly ? (
+        <span className="rounded-lg bg-violet-100 px-3 py-1.5 text-xs font-medium text-violet-800">
+          View only
+        </span>
+      ) : null}
       <BoardThemeSelector theme={boardTheme} onThemeChange={onBoardThemeChange} />
       <div className="group relative">
         <button
@@ -521,6 +557,19 @@ function BoardFloatingToolbar({
           </ul>
         </div>
       </div>
+      {!readOnly && onShare ? (
+        <button
+          type="button"
+          onClick={onShare}
+          disabled={isSharing}
+          aria-label="Share board link"
+          title="Share board link"
+          className="flex h-9 items-center gap-2 rounded-lg border border-zinc-200/80 bg-white/80 px-3 text-sm font-medium text-zinc-700 transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-wait disabled:opacity-60"
+        >
+          <ShareIcon />
+          <span className="hidden sm:inline">{isSharing ? "Sharing…" : "Share link"}</span>
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={onDownload}
@@ -532,11 +581,18 @@ function BoardFloatingToolbar({
         <DownloadIcon />
         <span className="hidden sm:inline">{isDownloading ? "Exporting…" : "Download JPG"}</span>
       </button>
+      {shareMessage ? (
+        <p className="pointer-events-none absolute right-0 top-full z-50 mt-2 max-w-xs rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900 shadow-md">
+          {shareMessage}
+        </p>
+      ) : null}
+      </div>
     </div>
   );
 }
 
 export function BoardCanvas({
+  readOnly = false,
   message,
   messageBoxPosition,
   contentPillarsBoxPosition,
@@ -618,6 +674,7 @@ export function BoardCanvas({
   onResizeEnd,
   onAddConnection,
   onRemoveConnection,
+  onShare,
 }: BoardCanvasProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draggingPillarIds, setDraggingPillarIds] = useState<string[]>([]);
@@ -635,6 +692,8 @@ export function BoardCanvas({
   const [isPanning, setIsPanning] = useState(false);
   const [spacePressed, setSpacePressed] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [painPointsDialogOpen, setPainPointsDialogOpen] = useState(false);
   const [passionPointsDialogOpen, setPassionPointsDialogOpen] = useState(false);
   const [experienceDialogOpen, setExperienceDialogOpen] = useState(false);
@@ -2098,9 +2157,35 @@ export function BoardCanvas({
       })()
     : null;
 
+  const dragLocked = readOnly || spacePressed || isPanning;
+
   const showHandlesForCard = (pillarId: string) =>
-    (selectedPillarIds.length === 1 && selectedPillarIds[0] === pillarId) ||
-    isConnecting;
+    !readOnly &&
+    ((selectedPillarIds.length === 1 && selectedPillarIds[0] === pillarId) ||
+      isConnecting);
+
+  const handleShareClick = useCallback(() => {
+    if (!onShare || readOnly) {
+      return;
+    }
+
+    setIsSharing(true);
+    setShareMessage(null);
+
+    void Promise.resolve(onShare())
+      .then(() => {
+        setShareMessage("Share link copied to clipboard.");
+      })
+      .catch((error: unknown) => {
+        const message =
+          error instanceof Error ? error.message : "Could not create share link.";
+        setShareMessage(message);
+      })
+      .finally(() => {
+        setIsSharing(false);
+        window.setTimeout(() => setShareMessage(null), 5000);
+      });
+  }, [onShare, readOnly]);
 
   const handleDownloadBoard = useCallback(async () => {
     if (!boardRef.current || isDownloading || !boardExportCapture) {
@@ -2146,9 +2231,13 @@ export function BoardCanvas({
     >
       <section className="board-canvas relative h-screen min-w-0 flex-1 overflow-hidden">
         <BoardFloatingToolbar
+          readOnly={readOnly}
           isDownloading={isDownloading}
+          isSharing={isSharing}
+          shareMessage={shareMessage}
           boardTheme={boardTheme}
           onBoardThemeChange={setBoardTheme}
+          onShare={onShare ? handleShareClick : undefined}
           onDownload={() => {
             void handleDownloadBoard();
           }}
@@ -2180,6 +2269,7 @@ export function BoardCanvas({
             }}
           >
             <MessageBox
+              readOnly={readOnly}
               position={messageBoxDisplayPosition}
               message={message}
               hasPillars={hasContentPillars}
@@ -2197,7 +2287,7 @@ export function BoardCanvas({
                 selectedPillarIds,
               )}
               boardScale={scale}
-              disableDrag={spacePressed || isPanning}
+              disableDrag={dragLocked}
               onMessageChange={onMessageChange}
               onGenerateMessage={onGenerateMessage}
               onGeneratePillars={onGeneratePillars}
@@ -2222,7 +2312,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2245,7 +2335,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2268,7 +2358,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2291,7 +2381,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2314,7 +2404,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2337,7 +2427,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2360,7 +2450,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2383,7 +2473,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2406,7 +2496,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2429,7 +2519,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2452,7 +2542,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2475,7 +2565,7 @@ export function BoardCanvas({
                   selectedPillarIds,
                 )}
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 onSelect={handleSelectPillar}
                 onUpdateLabel={onUpdateLabel}
                 onRemovePillar={(id) => onRemovePillars([id])}
@@ -2536,6 +2626,7 @@ export function BoardCanvas({
             {boardPillars.map((pillar) => (
               <PillarCard
                 key={pillar.id}
+                readOnly={readOnly}
                 pillar={pillar}
                 isVisionCard={isVisionCard(pillar)}
                 isStaticCard={isStaticCard(pillar)}
@@ -2551,7 +2642,7 @@ export function BoardCanvas({
                     : null
                 }
                 boardScale={scale}
-                disableDrag={spacePressed || isPanning}
+                disableDrag={dragLocked}
                 activeSource={connectionDrag?.from ?? null}
                 hoveredTarget={connectionDrag?.hoveredTarget ?? null}
                 onSelect={handleSelectPillar}
@@ -2561,7 +2652,7 @@ export function BoardCanvas({
                 onResizeStart={onResizeStart}
                 onResizeEnd={onResizeEnd}
                 footer={
-                  pillar.id === FRAMEWORK_CARD_IDS.demographic ? (
+                  readOnly ? undefined : pillar.id === FRAMEWORK_CARD_IDS.demographic ? (
                     <AudienceFrameworkFooter
                       canBuildSuggestions={hasContentPillars}
                       isGenerating={isGeneratingDemographic}
@@ -2631,10 +2722,14 @@ export function BoardCanvas({
           </div>
         </div>
       </section>
-      <WelcomeOnboardingModal
-        open={welcomeOpen && !isDownloading}
-        onDismiss={handleWelcomeDismiss}
-      />
+      {!readOnly ? (
+        <WelcomeOnboardingModal
+          open={welcomeOpen && !isDownloading}
+          onDismiss={handleWelcomeDismiss}
+        />
+      ) : null}
+      {!readOnly ? (
+        <>
       <BuildPainPointsDialog
         open={painPointsDialogOpen}
         isGenerating={isGeneratingPainPoints}
@@ -2703,6 +2798,8 @@ export function BoardCanvas({
           }
         }}
       />
+        </>
+      ) : null}
     </DndContext>
   );
 }

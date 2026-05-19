@@ -41,6 +41,7 @@ type PillarCardProps = {
   onResizeEnd?: () => void;
   boardScale?: number;
   disableDrag?: boolean;
+  readOnly?: boolean;
   footer?: ReactNode;
 };
 
@@ -66,6 +67,7 @@ export function PillarCard({
   onResizeEnd,
   boardScale = 1,
   disableDrag = false,
+  readOnly = false,
   footer,
 }: PillarCardProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -82,7 +84,7 @@ export function PillarCard({
 
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: pillar.id,
-    disabled: isEditing || isResizing || disableDrag,
+    disabled: isEditing || isResizing || disableDrag || readOnly,
   });
 
   const setOuterRef = useCallback(
@@ -272,10 +274,12 @@ export function PillarCard({
             <p
               onDoubleClick={(event) => {
                 event.stopPropagation();
-                startEditing();
+                if (!readOnly) {
+                  startEditing();
+                }
               }}
               className="board-text w-full select-none text-center text-sm font-medium leading-snug"
-              title="Double-click to edit"
+              title={readOnly ? undefined : "Double-click to edit"}
             >
               {pillar.label}
             </p>
@@ -292,7 +296,7 @@ export function PillarCard({
           </div>
         ) : null}
 
-        {isSelected && !isEditing ? (
+        {isSelected && !isEditing && !readOnly ? (
           <div
             data-resize-handle
             aria-label="Resize card"
