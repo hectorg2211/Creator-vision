@@ -57,6 +57,7 @@ import {
   ECOSYSTEM_CATEGORY_BUILD_LABELS,
   type EcosystemCategory,
 } from "@/lib/ecosystem-category";
+import { getDefaultBoardContentBounds } from "@/lib/board-layout";
 import {
   getAnchorPoint,
   resolveMessageBoxPillar,
@@ -178,38 +179,11 @@ function getFrameworkPillarSize(pillar: Pillar): PillarSize {
   return size;
 }
 
-function extendBoardRect(
-  bounds: BoardRect,
-  next: BoardRect,
-): BoardRect {
-  return {
-    left: Math.min(bounds.left, next.left),
-    top: Math.min(bounds.top, next.top),
-    right: Math.max(bounds.right, next.right),
-    bottom: Math.max(bounds.bottom, next.bottom),
-  };
-}
-
 function computeInitialBoardBounds(
   staticPillars: Pillar[],
   messageBoxPillar: Pillar | null,
 ): BoardRect | null {
-  let bounds: BoardRect | null = null;
-
-  for (const pillar of staticPillars) {
-    const pillarBounds = getPillarBounds(pillar, getFrameworkPillarSize(pillar));
-    bounds = bounds ? extendBoardRect(bounds, pillarBounds) : pillarBounds;
-  }
-
-  if (messageBoxPillar) {
-    const messageBounds = getPillarBounds(
-      messageBoxPillar,
-      getPillarSize(messageBoxPillar),
-    );
-    bounds = bounds ? extendBoardRect(bounds, messageBounds) : messageBounds;
-  }
-
-  return bounds;
+  return getDefaultBoardContentBounds(staticPillars, messageBoxPillar);
 }
 
 function fitBoardViewportToBounds(
@@ -823,8 +797,8 @@ export function BoardCanvas({
 
   const messageBoxDisplayPosition = useMemo(
     () => ({
-      x: messageBoxPillar?.x ?? 48,
-      y: messageBoxPillar?.y ?? 160 + MESSAGE_BOX_MIN_HEIGHT,
+      x: messageBoxPillar?.x ?? 0,
+      y: messageBoxPillar?.y ?? 272,
     }),
     [messageBoxPillar],
   );

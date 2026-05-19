@@ -4,7 +4,9 @@ export const PILLAR_CARD_WIDTH = 176;
 export const PILLAR_CARD_HEIGHT = 88;
 /** Min height for Demographic/Psychographic framework cards with action buttons. */
 export const AUDIENCE_FRAMEWORK_CARD_MIN_HEIGHT = 120;
-export const MESSAGE_BOX_GAP = 16;
+/** Board dot grid size — cards snap to this on drop. */
+export const BOARD_GRID_SIZE = 24;
+export const MESSAGE_BOX_GAP = BOARD_GRID_SIZE;
 export const MESSAGE_BOX_WIDTH = 280;
 /** Left action column beside the message card (matches MessageBox w-[7.5rem]). */
 export const MESSAGE_ACTION_COLUMN_WIDTH = 120;
@@ -12,8 +14,6 @@ export const MESSAGE_ACTION_COLUMN_WIDTH = 120;
 export const MESSAGE_ACTION_COLUMN_GAP = 12;
 /** Minimum left edge for message box placement on the board. */
 export const MESSAGE_BOX_MIN_LEFT = 8;
-/** Board dot grid size — cards snap to this on drop. */
-export const BOARD_GRID_SIZE = 24;
 /** Minimum layout height for empty/placeholder message box (content can grow taller). */
 export const MESSAGE_BOX_MIN_HEIGHT = 72;
 export const MIN_PILLAR_WIDTH = 120;

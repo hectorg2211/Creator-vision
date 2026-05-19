@@ -30,6 +30,15 @@ import {
   type ContentPillarsBoxPosition,
   type MessageBoxPosition,
 } from "@/lib/board-geometry";
+import {
+  BOARD_LAYOUT_VERSION,
+  BOARD_LAYOUT_WHO_ROW3_Y,
+  CANONICAL_FRAMEWORK_LAYOUT,
+  getDefaultMessageBoxPosition,
+  hasFrameworkCardsOverlap,
+} from "@/lib/board-layout";
+
+export { BOARD_LAYOUT_VERSION, CANONICAL_FRAMEWORK_LAYOUT } from "@/lib/board-layout";
 import type { EcosystemCategory } from "@/lib/ecosystem-category";
 import { clampDemographicAgeRangeInLabel } from "@/lib/demographic-age-range";
 
@@ -85,170 +94,46 @@ export const FRAMEWORK_CARD_IDS = {
   reinvest: "framework-reinvest",
 } as const;
 
-const FRAMEWORK_ROW_Y = 160;
-const FRAMEWORK_SUBTREE_GAP = 16;
+const CANONICAL_FRAMEWORK_BY_ID = new Map(
+  CANONICAL_FRAMEWORK_LAYOUT.map((entry) => [entry.id, entry]),
+);
 
 /** Top-row framework pillars connected from Creator vision. */
 export const VISION_FRAMEWORK_CARDS = [
-  {
-    id: FRAMEWORK_CARD_IDS.what,
-    label: "WHAT",
-    x: 48,
-    y: FRAMEWORK_ROW_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.who,
-    label: "WHO",
-    x: 248,
-    y: FRAMEWORK_ROW_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.uniqueness,
-    label: "UNIQUENESS",
-    x: 448,
-    y: FRAMEWORK_ROW_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.monetization,
-    label: "MONETIZATION",
-    x: 648,
-    y: FRAMEWORK_ROW_Y,
-  },
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.what)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.who)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.uniqueness)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.monetization)!,
 ] as const;
-
-const AVATAR_FRAMEWORK_Y =
-  FRAMEWORK_ROW_Y + PILLAR_CARD_HEIGHT + FRAMEWORK_SUBTREE_GAP;
-const WHO_SUBTREE_ROW_Y = AVATAR_FRAMEWORK_Y + PILLAR_CARD_HEIGHT + FRAMEWORK_SUBTREE_GAP;
-const WHO_CENTER_X = 248 + PILLAR_CARD_WIDTH / 2;
-const WHO_SUBTREE_PAIR_WIDTH = PILLAR_CARD_WIDTH * 2 + FRAMEWORK_SUBTREE_GAP;
-const DEMOGRAPHIC_X = WHO_CENTER_X - WHO_SUBTREE_PAIR_WIDTH / 2;
-const PSYCHOGRAPHIC_X = DEMOGRAPHIC_X + PILLAR_CARD_WIDTH + FRAMEWORK_SUBTREE_GAP;
 
 /** WHO subtree static pillars (not connected directly from Creator vision). */
 export const WHO_SUBTREE_CARDS = [
-  {
-    id: FRAMEWORK_CARD_IDS.avatar,
-    label: "AVATAR",
-    x: 248,
-    y: AVATAR_FRAMEWORK_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.demographic,
-    label: "Demographic",
-    x: DEMOGRAPHIC_X,
-    y: WHO_SUBTREE_ROW_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.psychographic,
-    label: "Psychographic",
-    x: PSYCHOGRAPHIC_X,
-    y: WHO_SUBTREE_ROW_Y,
-  },
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.avatar)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.demographic)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.psychographic)!,
 ] as const;
-
-const UNIQUENESS_SUBTREE_GAP = 24;
-const UNIQUENESS_CENTER_X = 448 + PILLAR_CARD_WIDTH / 2;
-const YOUR_TRUTH_FRAMEWORK_Y =
-  FRAMEWORK_ROW_Y + PILLAR_CARD_HEIGHT + UNIQUENESS_SUBTREE_GAP;
-const UNIQUENESS_FOUR_ROW_Y =
-  YOUR_TRUTH_FRAMEWORK_Y + PILLAR_CARD_HEIGHT + UNIQUENESS_SUBTREE_GAP;
-const UNIQUENESS_FOUR_ROW_WIDTH =
-  PILLAR_CARD_WIDTH * 4 + UNIQUENESS_SUBTREE_GAP * 3;
-const UNIQUENESS_FOUR_ROW_START_X =
-  UNIQUENESS_CENTER_X - UNIQUENESS_FOUR_ROW_WIDTH / 2;
 
 /** UNIQUENESS subtree static pillars (shown with audience areas). */
 export const UNIQUENESS_SUBTREE_CARDS = [
-  {
-    id: FRAMEWORK_CARD_IDS.yourTruth,
-    label: "YOUR TRUTH",
-    x: 448,
-    y: YOUR_TRUTH_FRAMEWORK_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.pain,
-    label: "PAIN",
-    x: UNIQUENESS_FOUR_ROW_START_X,
-    y: UNIQUENESS_FOUR_ROW_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.passion,
-    label: "PASSION",
-    x: UNIQUENESS_FOUR_ROW_START_X + PILLAR_CARD_WIDTH + UNIQUENESS_SUBTREE_GAP,
-    y: UNIQUENESS_FOUR_ROW_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.experience,
-    label: "EXPERIENCE",
-    x:
-      UNIQUENESS_FOUR_ROW_START_X +
-      (PILLAR_CARD_WIDTH + UNIQUENESS_SUBTREE_GAP) * 2,
-    y: UNIQUENESS_FOUR_ROW_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.skill,
-    label: "SKILL",
-    x:
-      UNIQUENESS_FOUR_ROW_START_X +
-      (PILLAR_CARD_WIDTH + UNIQUENESS_SUBTREE_GAP) * 3,
-    y: UNIQUENESS_FOUR_ROW_Y,
-  },
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.yourTruth)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.pain)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.passion)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.experience)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.skill)!,
 ] as const;
-
-const MONETIZATION_SUBTREE_GAP = 24;
-const ECOSYSTEM_FRAMEWORK_Y =
-  FRAMEWORK_ROW_Y + PILLAR_CARD_HEIGHT + MONETIZATION_SUBTREE_GAP;
-const MONETIZATION_FOUR_ROW_Y =
-  ECOSYSTEM_FRAMEWORK_Y + PILLAR_CARD_HEIGHT + MONETIZATION_SUBTREE_GAP;
-/** Offset right of UNIQUENESS four-card row to avoid horizontal overlap at y=384. */
-const MONETIZATION_FOUR_ROW_START_X = 948;
-const MONETIZATION_FOUR_ROW_SECOND_X =
-  MONETIZATION_FOUR_ROW_START_X + PILLAR_CARD_WIDTH + MONETIZATION_SUBTREE_GAP;
-const MONETIZATION_FOUR_SECOND_ROW_Y =
-  MONETIZATION_FOUR_ROW_Y +
-  AUDIENCE_FRAMEWORK_CARD_MIN_HEIGHT +
-  MONETIZATION_SUBTREE_GAP;
 
 /** MONETIZATION subtree static pillars (shown with audience areas). */
 export const MONETIZATION_SUBTREE_CARDS = [
-  {
-    id: FRAMEWORK_CARD_IDS.ecosystem,
-    label: "ECOSYSTEM",
-    x: 648,
-    y: ECOSYSTEM_FRAMEWORK_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.oneOff,
-    label: "One-Off",
-    x: MONETIZATION_FOUR_ROW_START_X,
-    y: MONETIZATION_FOUR_ROW_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.ongoingContent,
-    label: "Ongoing content",
-    x: MONETIZATION_FOUR_ROW_SECOND_X,
-    y: MONETIZATION_FOUR_ROW_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.highValuePartners,
-    label: "High value partners",
-    x: MONETIZATION_FOUR_ROW_START_X,
-    y: MONETIZATION_FOUR_SECOND_ROW_Y,
-  },
-  {
-    id: FRAMEWORK_CARD_IDS.reinvest,
-    label: "Reinvest",
-    x: MONETIZATION_FOUR_ROW_SECOND_X,
-    y: MONETIZATION_FOUR_SECOND_ROW_Y,
-  },
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.ecosystem)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.oneOff)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.ongoingContent)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.highValuePartners)!,
+  CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.reinvest)!,
 ] as const;
 
-export const FRAMEWORK_CARDS = [
-  ...VISION_FRAMEWORK_CARDS,
-  ...WHO_SUBTREE_CARDS,
-  ...UNIQUENESS_SUBTREE_CARDS,
-  ...MONETIZATION_SUBTREE_CARDS,
-] as const;
+export const FRAMEWORK_CARDS = CANONICAL_FRAMEWORK_LAYOUT.filter(
+  (entry) => entry.id !== VISION_CARD_ID,
+) as readonly (typeof CANONICAL_FRAMEWORK_LAYOUT)[number][];
 
 const UNIQUENESS_SUBTREE_CARD_IDS = new Set<string>(
   UNIQUENESS_SUBTREE_CARDS.map((card) => card.id),
@@ -362,6 +247,8 @@ export type CreatorVision = {
   message: string;
   pillars: Pillar[];
   connections: Connection[];
+  /** Canonical framework layout generation; missing values migrate on load. */
+  layoutVersion?: number;
   messageBoxPosition?: MessageBoxPosition;
   contentPillarsBoxPosition?: ContentPillarsBoxPosition;
   demographicBoxPosition?: ContentPillarsBoxPosition;
@@ -386,11 +273,12 @@ export type EcosystemGeneration = {
 };
 
 export function createDefaultVisionCard(): Pillar {
+  const layout = CANONICAL_FRAMEWORK_BY_ID.get(VISION_CARD_ID)!;
   return {
     id: VISION_CARD_ID,
     label: VISION_CARD_LABEL,
-    x: 220,
-    y: 48,
+    x: layout.x,
+    y: layout.y,
   };
 }
 
@@ -473,7 +361,12 @@ function getFrameworkCardBoundsForObstacles(pillar: Pillar): BoardRect {
 function shouldResetFrameworkCardPosition(
   pillar: Pillar,
   pillars: Pillar[],
+  options: { forceCanonical?: boolean } = {},
 ): boolean {
+  if (options.forceCanonical) {
+    return true;
+  }
+
   const canonical = FRAMEWORK_CARDS.find((card) => card.id === pillar.id);
   if (!canonical) {
     return false;
@@ -481,6 +374,10 @@ function shouldResetFrameworkCardPosition(
 
   if (pillar.x === canonical.x && pillar.y === canonical.y) {
     return false;
+  }
+
+  if (hasFrameworkCardsOverlap(pillars)) {
+    return true;
   }
 
   const bounds = getFrameworkCardBoundsForObstacles(pillar);
@@ -498,16 +395,9 @@ function shouldResetFrameworkCardPosition(
     }
   }
 
-  const whoSubtreeRowY =
-    FRAMEWORK_ROW_Y +
-    PILLAR_CARD_HEIGHT +
-    FRAMEWORK_SUBTREE_GAP +
-    PILLAR_CARD_HEIGHT +
-    FRAMEWORK_SUBTREE_GAP;
-
   if (
     (isUniquenessSubtreeCard(pillar.id) || isMonetizationSubtreeCard(pillar.id)) &&
-    pillar.y < whoSubtreeRowY
+    pillar.y < BOARD_LAYOUT_WHO_ROW3_Y
   ) {
     return true;
   }
@@ -515,12 +405,60 @@ function shouldResetFrameworkCardPosition(
   if (
     (pillar.id === FRAMEWORK_CARD_IDS.demographic ||
       pillar.id === FRAMEWORK_CARD_IDS.psychographic) &&
-    pillar.y < whoSubtreeRowY - BOARD_LAYOUT_POSITION_EPSILON
+    pillar.y < BOARD_LAYOUT_WHO_ROW3_Y - BOARD_LAYOUT_POSITION_EPSILON
   ) {
     return true;
   }
 
+  if (
+    pillar.id === FRAMEWORK_CARD_IDS.psychographic &&
+    pillar.y > BOARD_LAYOUT_WHO_ROW3_Y + BOARD_LAYOUT_POSITION_EPSILON
+  ) {
+    return true;
+  }
+
+  if (
+    pillar.id === FRAMEWORK_CARD_IDS.psychographic &&
+    pillar.x === CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.demographic)!.x
+  ) {
+    return true;
+  }
+
+  const monetizationFooterIds = new Set<string>([
+    FRAMEWORK_CARD_IDS.oneOff,
+    FRAMEWORK_CARD_IDS.ongoingContent,
+    FRAMEWORK_CARD_IDS.highValuePartners,
+    FRAMEWORK_CARD_IDS.reinvest,
+  ]);
+
+  if (monetizationFooterIds.has(pillar.id) && pillar.y !== canonical.y) {
+    return true;
+  }
+
   return false;
+}
+
+function needsLayoutVersionMigration(vision: CreatorVision): boolean {
+  return (vision.layoutVersion ?? 0) < BOARD_LAYOUT_VERSION;
+}
+
+function clearStoredBoxPositions(vision: CreatorVision): CreatorVision {
+  return {
+    ...vision,
+    messageBoxPosition: undefined,
+    contentPillarsBoxPosition: undefined,
+    demographicBoxPosition: undefined,
+    instagramCreatorsBoxPosition: undefined,
+    psychographicBoxPosition: undefined,
+    painBoxPosition: undefined,
+    passionBoxPosition: undefined,
+    experienceBoxPosition: undefined,
+    skillBoxPosition: undefined,
+    oneOffBoxPosition: undefined,
+    ongoingContentBoxPosition: undefined,
+    highValuePartnersBoxPosition: undefined,
+    reinvestBoxPosition: undefined,
+  };
 }
 
 export function getFrameworkObstacleRects(
@@ -991,7 +929,10 @@ export function migrateVisionBoxPositions(vision: CreatorVision): CreatorVision 
   };
 }
 
-export function getStaticPillars(pillars: Pillar[]): Pillar[] {
+export function getStaticPillars(
+  pillars: Pillar[],
+  options: { forceCanonicalLayout?: boolean } = {},
+): Pillar[] {
   const pillarMap = new Map(pillars.map((pillar) => [pillar.id, pillar]));
   const mergedPillars = [
     migrateStaticCardLabel(
@@ -1009,8 +950,14 @@ export function getStaticPillars(pillars: Pillar[]): Pillar[] {
     ),
   ];
 
+  const forceCanonical = options.forceCanonicalLayout === true;
+
   return mergedPillars.map((pillar) => {
     if (!isFrameworkCard(pillar.id)) {
+      if (pillar.id === VISION_CARD_ID && forceCanonical) {
+        const canonical = CANONICAL_FRAMEWORK_BY_ID.get(VISION_CARD_ID)!;
+        return { ...pillar, x: canonical.x, y: canonical.y };
+      }
       return pillar;
     }
 
@@ -1019,7 +966,11 @@ export function getStaticPillars(pillars: Pillar[]): Pillar[] {
       return pillar;
     }
 
-    if (shouldResetFrameworkCardPosition(pillar, mergedPillars)) {
+    if (
+      shouldResetFrameworkCardPosition(pillar, mergedPillars, {
+        forceCanonical,
+      })
+    ) {
       return { ...pillar, x: canonical.x, y: canonical.y };
     }
 
@@ -1830,6 +1781,7 @@ export function createEmptyVision(): CreatorVision {
 
   return {
     message: "",
+    layoutVersion: BOARD_LAYOUT_VERSION,
     pillars,
     connections: [
       ...createDefaultFrameworkConnections(),
@@ -1860,25 +1812,29 @@ export function loadVision(): CreatorVision {
     }
 
     const parsed = JSON.parse(raw) as CreatorVision;
+    const layoutMigration = needsLayoutVersionMigration(parsed);
     const pillars = ensureStaticCards(
-      Array.isArray(parsed.pillars)
-        ? parsed.pillars.map((pillar) => {
-            if (pillar.width === undefined && pillar.height === undefined) {
-              return pillar;
-            }
+      getStaticPillars(
+        Array.isArray(parsed.pillars)
+          ? parsed.pillars.map((pillar) => {
+              if (pillar.width === undefined && pillar.height === undefined) {
+                return pillar;
+              }
 
-            const size = clampPillarSize({
-              width: pillar.width ?? PILLAR_CARD_WIDTH,
-              height: pillar.height ?? PILLAR_CARD_HEIGHT,
-            });
+              const size = clampPillarSize({
+                width: pillar.width ?? PILLAR_CARD_WIDTH,
+                height: pillar.height ?? PILLAR_CARD_HEIGHT,
+              });
 
-            return {
-              ...pillar,
-              width: size.width,
-              height: size.height,
-            };
-          })
-        : [],
+              return {
+                ...pillar,
+                width: size.width,
+                height: size.height,
+              };
+            })
+          : [],
+        { forceCanonicalLayout: layoutMigration },
+      ),
     );
     const pillarMap = new Map(pillars.map((pillar) => [pillar.id, pillar]));
 
@@ -2056,8 +2012,9 @@ export function loadVision(): CreatorVision {
           }
         : undefined;
 
-    return migrateVisionBoxPositions({
+    const visionBeforeBoxes: CreatorVision = {
       message,
+      layoutVersion: BOARD_LAYOUT_VERSION,
       pillars,
       connections,
       messageBoxPosition,
@@ -2074,7 +2031,11 @@ export function loadVision(): CreatorVision {
       highValuePartnersBoxPosition,
       reinvestBoxPosition,
       updatedAt: parsed.updatedAt ?? Date.now(),
-    });
+    };
+
+    return migrateVisionBoxPositions(
+      layoutMigration ? clearStoredBoxPositions(visionBeforeBoxes) : visionBeforeBoxes,
+    );
   } catch {
     return createEmptyVision();
   }
@@ -2087,7 +2048,11 @@ export function saveVision(vision: CreatorVision): void {
 
   localStorage.setItem(
     STORAGE_KEY,
-    JSON.stringify({ ...vision, updatedAt: Date.now() }),
+    JSON.stringify({
+      ...vision,
+      layoutVersion: vision.layoutVersion ?? BOARD_LAYOUT_VERSION,
+      updatedAt: Date.now(),
+    }),
   );
 }
 
@@ -2095,11 +2060,18 @@ function getMessageBoxPillarForPlacement(vision: CreatorVision): Pillar {
   const whatCard = vision.pillars.find((pillar) => pillar.id === FRAMEWORK_CARD_IDS.what);
 
   if (!whatCard) {
+    const fallbackWhat = CANONICAL_FRAMEWORK_BY_ID.get(FRAMEWORK_CARD_IDS.what)!;
+    const position = getDefaultMessageBoxPosition({
+      id: FRAMEWORK_CARD_IDS.what,
+      label: "WHAT",
+      x: fallbackWhat.x,
+      y: fallbackWhat.y,
+    });
     return {
       id: MESSAGE_BOX_ID,
       label: "Message",
-      x: 48,
-      y: 264,
+      x: position.x,
+      y: position.y,
       width: MESSAGE_BOX_WIDTH,
       height: MESSAGE_BOX_MIN_HEIGHT,
     };
