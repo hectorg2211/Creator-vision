@@ -3,7 +3,14 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MESSAGE_BOX_WIDTH, type MessageBoxPosition } from "@/lib/board-geometry";
+import {
+  getMessageBoxCardDisplayX,
+  getMessageBoxWrapperLeft,
+  MESSAGE_ACTION_COLUMN_GAP,
+  MESSAGE_ACTION_COLUMN_WIDTH,
+  MESSAGE_BOX_WIDTH,
+  type MessageBoxPosition,
+} from "@/lib/board-geometry";
 import { MESSAGE_BOX_ID } from "@/lib/vision-store";
 import {
   GenerateMessageDialog,
@@ -123,6 +130,12 @@ type MessageBoxProps = {
   onLayoutHeightChange?: (height: number) => void;
 };
 
+const MESSAGE_PLACEHOLDER =
+  "Your core idea — everything you create should support this.";
+
+const messageTextareaClass =
+  "mt-2 w-full resize-none rounded-lg border border-violet-200 bg-white/90 px-2 py-1.5 text-sm text-zinc-900 outline-none ring-violet-500 placeholder:text-zinc-400 focus:ring-2";
+
 export function MessageBox({
   position,
   message,
@@ -150,6 +163,12 @@ export function MessageBox({
   const [isEditing, setIsEditing] = useState(false);
   const [showReplaceConfirm, setShowReplaceConfirm] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const startManualEdit = useCallback(() => {
+    setIsEditing(true);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
 
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: MESSAGE_BOX_ID,
@@ -173,6 +192,8 @@ export function MessageBox({
 
   const trimmedMessage = message.trim();
   const hasMessage = trimmedMessage.length > 0;
+  const cardDisplayX = getMessageBoxCardDisplayX(position);
+  const wrapperLeft = getMessageBoxWrapperLeft(cardDisplayX);
 
   useEffect(() => {
     const card = cardRef.current;
@@ -232,7 +253,7 @@ export function MessageBox({
           isDragging ? "cursor-grabbing" : isEditing ? "" : "cursor-grab"
         }`}
         style={{
-          left: Math.max(8, position.x),
+          left: wrapperLeft,
           top: position.y,
           transform: CSS.Translate.toString(dragTransform),
           zIndex: isDragging ? 50 : 30,
@@ -249,21 +270,42 @@ export function MessageBox({
         }}
       >
         <div
-          className="absolute top-0 flex w-[7.5rem] flex-col gap-2"
-          style={{ right: "calc(100% + 0.75rem)" }}
+          className="flex items-start"
+          style={{ gap: MESSAGE_ACTION_COLUMN_GAP }}
           onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
         >
+          <div
+            className="flex shrink-0 flex-col gap-2"
+            style={{ width: MESSAGE_ACTION_COLUMN_WIDTH }}
+          >
           {!hasMessage ? (
-            <button
-              type="button"
-              onClick={() => setWizardOpen(true)}
-              disabled={isGeneratingMessage}
-              className={`${actionButtonClass} bg-violet-600 text-white hover:bg-violet-700`}
-            >
-              {isGeneratingMessage ? "Generating…" : "Generate your message"}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setWizardOpen(true)}
+                disabled={isGeneratingMessage}
+                className={`${actionButtonClass} bg-violet-600 text-white hover:bg-violet-700`}
+              >
+                {isGeneratingMessage ? "Generating…" : "Generate your message"}
+              </button>
+              <button
+                type="button"
+                onClick={startManualEdit}
+                className={`${actionButtonClass} border border-zinc-200 bg-white/90 text-zinc-700 shadow-sm hover:bg-white`}
+              >
+                Write your own
+              </button>
+            </>
           ) : (
             <>
+              <button
+                type="button"
+                onClick={startManualEdit}
+                className={`${actionButtonClass} border border-zinc-200 bg-white/90 text-zinc-700 shadow-sm hover:bg-white`}
+              >
+                Edit message
+              </button>
               <button
                 type="button"
                 onClick={() => setWizardOpen(true)}
@@ -289,7 +331,7 @@ export function MessageBox({
               </button>
             </>
           )}
-        </div>
+          </div>
 
         <div
           ref={setCardRef}
@@ -303,30 +345,27 @@ export function MessageBox({
             Message
           </p>
 
-          {hasMessage ? (
-            isEditing ? (
-              <textarea
-                autoFocus
-                value={message}
-                onChange={(event) => onMessageChange(event.target.value)}
-                onBlur={() => setIsEditing(false)}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-                rows={4}
-                className="mt-2 w-full resize-none rounded-lg border border-violet-200 bg-white/90 px-2 py-1.5 text-sm text-zinc-900 outline-none ring-violet-500 focus:ring-2"
-              />
-            ) : (
-              <p
-                className="board-text mt-2 cursor-text text-sm leading-snug"
-                onClick={() => setIsEditing(true)}
-                title="Click to edit"
-              >
-                {trimmedMessage}
-              </p>
-            )
+          {!hasMessage || isEditing ? (
+            <textarea
+              ref={textareaRef}
+              autoFocus={isEditing && hasMessage}
+              value={message}
+              onChange={(event) => onMessageChange(event.target.value)}
+              onFocus={() => setIsEditing(true)}
+              onBlur={() => setIsEditing(false)}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+              rows={hasMessage ? 4 : 3}
+              placeholder={MESSAGE_PLACEHOLDER}
+              className={messageTextareaClass}
+            />
           ) : (
-            <p className="board-text-muted mt-2 text-sm">
-              Your core idea — everything you create should support this.
+            <p
+              className="board-text mt-2 cursor-text text-sm leading-snug"
+              onClick={startManualEdit}
+              title="Click to edit"
+            >
+              {trimmedMessage}
             </p>
           )}
 
@@ -377,13 +416,16 @@ export function MessageBox({
             />
           ) : null}
         </div>
+        </div>
       </div>
 
       <GenerateMessageDialog
         open={wizardOpen}
         isGenerating={isGeneratingMessage}
         error={messageError}
-        onClose={() => setWizardOpen(false)}
+        onClose={() => {
+          setWizardOpen(false);
+        }}
         onSubmit={handleWizardSubmit}
       />
     </>

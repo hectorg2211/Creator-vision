@@ -12,8 +12,14 @@ export const MESSAGE_BOX_WIDTH = 280;
 export const MESSAGE_ACTION_COLUMN_WIDTH = 120;
 /** Gap between action column and message card (matches MessageBox 0.75rem). */
 export const MESSAGE_ACTION_COLUMN_GAP = 12;
+/** Combined width of the left action strip (column + gap). */
+export const MESSAGE_BOX_ACTION_STRIP_WIDTH =
+  MESSAGE_ACTION_COLUMN_WIDTH + MESSAGE_ACTION_COLUMN_GAP;
 /** Minimum left edge for message box placement on the board. */
 export const MESSAGE_BOX_MIN_LEFT = 8;
+/** Minimum card x so the left action strip stays inside the board viewport. */
+export const MESSAGE_BOX_MIN_CARD_LEFT =
+  MESSAGE_BOX_MIN_LEFT + MESSAGE_BOX_ACTION_STRIP_WIDTH;
 /** Minimum layout height for empty/placeholder message box (content can grow taller). */
 export const MESSAGE_BOX_MIN_HEIGHT = 72;
 export const MIN_PILLAR_WIDTH = 120;
@@ -264,20 +270,27 @@ export function getBoxBoundsAt(
   );
 }
 
+export function getMessageBoxCardDisplayX(position: MessageBoxPosition): number {
+  return Math.max(MESSAGE_BOX_MIN_CARD_LEFT, position.x);
+}
+
+export function getMessageBoxWrapperLeft(cardDisplayX: number): number {
+  return cardDisplayX - MESSAGE_BOX_ACTION_STRIP_WIDTH;
+}
+
 /** Message card + left action buttons (export bounds extend left of the card). */
 export function getMessageBoxExportBounds(
   position: MessageBoxPosition,
   height: number,
 ): BoardRect {
-  const displayX = Math.max(MESSAGE_BOX_MIN_LEFT, position.x);
+  const cardDisplayX = getMessageBoxCardDisplayX(position);
   const cardBounds = getBoxBoundsAt(
-    { x: displayX, y: position.y },
+    { x: cardDisplayX, y: position.y },
     { width: MESSAGE_BOX_WIDTH, height },
   );
 
   return {
-    left:
-      cardBounds.left - MESSAGE_ACTION_COLUMN_GAP - MESSAGE_ACTION_COLUMN_WIDTH,
+    left: getMessageBoxWrapperLeft(cardDisplayX),
     top: cardBounds.top,
     right: cardBounds.right,
     bottom: cardBounds.bottom,
@@ -978,7 +991,7 @@ export function getMessageBoxVirtualPillar(
   return snapVirtualPillar({
     id: messageBoxId,
     label: "Message",
-    x: Math.max(0, rawX),
+    x: Math.max(MESSAGE_BOX_MIN_CARD_LEFT, rawX),
     y: whatCard.y + size.height + MESSAGE_BOX_GAP,
     width: MESSAGE_BOX_WIDTH,
     height,

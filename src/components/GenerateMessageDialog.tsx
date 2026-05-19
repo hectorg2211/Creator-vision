@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export type MessageAnswers = {
@@ -54,6 +54,14 @@ function CloseIcon() {
   );
 }
 
+function trimAnswers(answers: MessageAnswers): MessageAnswers {
+  return {
+    who: answers.who.trim(),
+    helpWith: answers.helpWith.trim(),
+    uniqueness: answers.uniqueness.trim(),
+  };
+}
+
 export function GenerateMessageDialog({
   open,
   isGenerating,
@@ -66,11 +74,20 @@ export function GenerateMessageDialog({
     helpWith: "",
     uniqueness: "",
   });
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) {
       return;
     }
+
+    setValidationError(null);
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -83,35 +100,84 @@ export function GenerateMessageDialog({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
-  if (!open) {
+  const readAnswersFromForm = useCallback((): MessageAnswers => {
+    const form = formRef.current;
+    if (!form) {
+      return answers;
+    }
+
+    const getValue = (id: keyof MessageAnswers) => {
+      const field = form.elements.namedItem(id);
+      if (field instanceof HTMLTextAreaElement) {
+        return field.value;
+      }
+      return answers[id];
+    };
+
+    return {
+      who: getValue("who"),
+      helpWith: getValue("helpWith"),
+      uniqueness: getValue("uniqueness"),
+    };
+  }, [answers]);
+
+  const submitAnswers = useCallback(async () => {
+    const trimmed = trimAnswers(readAnswersFromForm());
+
+    if (!trimmed.who || !trimmed.helpWith || !trimmed.uniqueness) {
+      setValidationError("Please answer all three questions before generating.");
+      return;
+    }
+
+    setValidationError(null);
+
+    try {
+      await onSubmit(trimmed);
+    } catch {
+      setValidationError("Something went wrong while generating. Please try again.");
+    }
+  }, [onSubmit, readAnswersFromForm]);
+
+  if (!open || !mounted) {
     return null;
   }
 
-  const handleSubmit = async (event: React.FormEvent) => {
+  const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    await onSubmit(answers);
+    void submitAnswers();
   };
 
   const updateAnswer = (id: keyof MessageAnswers, value: string) => {
     setAnswers((current) => ({ ...current, [id]: value }));
+    setValidationError(null);
   };
+
+  const displayError = validationError ?? error;
 
   return createPortal(
     <div
       role="presentation"
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
     >
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={-1}
         aria-label="Close dialog"
         className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm"
         onClick={onClose}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onClose();
+          }
+        }}
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="generate-message-title"
         className="relative z-10 w-full max-w-md rounded-xl border border-violet-200 bg-white/95 p-6 shadow-xl backdrop-blur-sm"
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
         <button
@@ -132,7 +198,7 @@ export function GenerateMessageDialog({
           Answer a few questions so we can craft your core vision message.
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="mt-5 space-y-4">
           {QUESTIONS.map((question) => (
             <div key={question.id}>
               <label
@@ -143,20 +209,22 @@ export function GenerateMessageDialog({
               </label>
               <textarea
                 id={question.id}
+                name={question.id}
                 value={answers[question.id]}
                 onChange={(event) => updateAnswer(question.id, event.target.value)}
+                onInput={(event) => updateAnswer(question.id, event.currentTarget.value)}
                 placeholder={question.placeholder}
                 rows={2}
-                required
                 disabled={isGenerating}
+                autoComplete="off"
                 className="w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50/80 px-3 py-2 text-sm text-zinc-900 outline-none ring-violet-500 placeholder:text-zinc-400 focus:bg-white focus:ring-2 disabled:opacity-60"
               />
             </div>
           ))}
 
-          {error ? (
+          {displayError ? (
             <p className="text-sm text-red-600" role="alert">
-              {error}
+              {displayError}
             </p>
           ) : null}
 
@@ -171,6 +239,9 @@ export function GenerateMessageDialog({
             <button
               type="submit"
               disabled={isGenerating}
+              onClick={() => {
+                void submitAnswers();
+              }}
               className="flex-1 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isGenerating ? "Generating…" : "Generate message"}

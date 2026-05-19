@@ -1,6 +1,9 @@
 import {
   AUDIENCE_FRAMEWORK_CARD_MIN_HEIGHT,
   BOARD_GRID_SIZE,
+  getMessageBoxCardDisplayX,
+  getMessageBoxExportBounds,
+  MESSAGE_BOX_MIN_HEIGHT,
   MESSAGE_BOX_WIDTH,
   PILLAR_CARD_HEIGHT,
   PILLAR_CARD_WIDTH,
@@ -13,7 +16,7 @@ import {
 import type { Pillar } from "@/lib/vision-store";
 
 /** Bump when canonical framework positions change — triggers migration on load. */
-export const BOARD_LAYOUT_VERSION = 4;
+export const BOARD_LAYOUT_VERSION = 6;
 
 /** Standard gap between framework cards and rows (matches board grid). */
 export const BOARD_LAYOUT_GAP = BOARD_GRID_SIZE;
@@ -25,8 +28,13 @@ const G = BOARD_LAYOUT_GAP;
 
 /** Left edge of the top framework row (WHAT column). */
 const COL0_X = G;
-/** WHO+ must clear the 280px message box under WHAT (may clamp to x=0). */
-const COL1_X = COL0_X + MESSAGE_BOX_WIDTH + G;
+/** Default message card x under WHAT (includes left action strip clearance). */
+const DEFAULT_MESSAGE_CARD_X = getMessageBoxCardDisplayX({
+  x: COL0_X + (W - MESSAGE_BOX_WIDTH) / 2,
+  y: 0,
+});
+/** WHO+ must clear the full message widget (action column + 280px card). */
+const COL1_X = DEFAULT_MESSAGE_CARD_X + MESSAGE_BOX_WIDTH + G;
 
 /** Four footer cards in a row (PAIN…SKILL, monetization categories). */
 const FOUR_CARD_ROW_WIDTH = W * 4 + G * 3;
@@ -48,8 +56,12 @@ const TOP_ROW_LEFT = COL0_X;
 const TOP_ROW_RIGHT = COL3_X + W;
 const TOP_ROW_CENTER_X = TOP_ROW_LEFT + (TOP_ROW_RIGHT - TOP_ROW_LEFT) / 2;
 
-export const BOARD_LAYOUT_VISION_Y = G * 2;
-export const BOARD_LAYOUT_FRAMEWORK_ROW_Y = BOARD_LAYOUT_VISION_Y + H + G;
+/** CREATOR VISION — one grid cell from top (was 2 cells / y=48). */
+export const BOARD_LAYOUT_VISION_Y = G;
+/** Extra breathing room between CREATOR VISION and WHAT/WHO/UNIQUENESS/MONETIZATION. */
+const VISION_FRAMEWORK_EXTRA_GAP = G * 3;
+export const BOARD_LAYOUT_FRAMEWORK_ROW_Y =
+  BOARD_LAYOUT_VISION_Y + H + G + VISION_FRAMEWORK_EXTRA_GAP;
 export const BOARD_LAYOUT_ROW2_Y = BOARD_LAYOUT_FRAMEWORK_ROW_Y + H + G;
 /** Demographic + Psychographic side-by-side row under AVATAR. */
 export const BOARD_LAYOUT_WHO_ROW3_Y = BOARD_LAYOUT_ROW2_Y + H + G;
@@ -219,9 +231,11 @@ export function hasFrameworkCardsOverlap(pillars: Pillar[]): boolean {
 /** Default message box top-left under WHAT (280px wide, leaves 24px gap before WHO). */
 export function getDefaultMessageBoxPosition(whatCard: Pillar): { x: number; y: number } {
   const rawX = whatCard.x + (W - MESSAGE_BOX_WIDTH) / 2;
+  const y = whatCard.y + H + G;
+
   return {
-    x: Math.max(0, rawX),
-    y: whatCard.y + H + G,
+    x: getMessageBoxCardDisplayX({ x: Math.max(0, rawX), y }),
+    y,
   };
 }
 
@@ -236,12 +250,12 @@ export function getDefaultBoardContentBounds(
   let bottom = BOARD_LAYOUT_MONETIZATION_FOUR_ROW_Y + FOOTER_H;
 
   if (messageBox) {
-    const messageWidth = messageBox.width ?? MESSAGE_BOX_WIDTH;
-    const messageHeight = messageBox.height ?? 72;
-    left = Math.min(left, messageBox.x);
-    top = Math.min(top, messageBox.y);
-    right = Math.max(right, messageBox.x + messageWidth);
-    bottom = Math.max(bottom, messageBox.y + messageHeight);
+    const messageHeight = messageBox.height ?? MESSAGE_BOX_MIN_HEIGHT;
+    const exportBounds = getMessageBoxExportBounds(messageBox, messageHeight);
+    left = Math.min(left, exportBounds.left);
+    top = Math.min(top, exportBounds.top);
+    right = Math.max(right, exportBounds.right);
+    bottom = Math.max(bottom, exportBounds.bottom);
   }
 
   for (const entry of CANONICAL_FRAMEWORK_LAYOUT) {
