@@ -45,8 +45,13 @@ import { ContentPillarsBox } from "@/components/ContentPillarsBox";
 import { MessageBox } from "@/components/MessageBox";
 import { PillarCard } from "@/components/PillarCard";
 import { BoardThemeSelector } from "@/components/BoardThemeSelector";
+import { WelcomeOnboardingModal } from "@/components/WelcomeOnboardingModal";
 import { downloadBoardAsJpg } from "@/lib/download-board-image";
 import { useBoardTheme } from "@/hooks/useBoardTheme";
+import {
+  hasSeenWelcomeOnboarding,
+  markWelcomeOnboardingSeen,
+} from "@/lib/welcome-onboarding";
 import type { MessageAnswers } from "@/components/GenerateMessageDialog";
 import {
   ECOSYSTEM_CATEGORY_BUILD_LABELS,
@@ -88,8 +93,6 @@ import {
   getReinvestPillars,
   isDeletableBoardId,
   isStaticCard,
-  isUniquenessSubtreeCard,
-  isMonetizationSubtreeCard,
   isVisionCard,
   FRAMEWORK_CARD_IDS,
   getFrameworkObstacleRects,
@@ -145,9 +148,88 @@ type BoardViewport = {
 const MIN_BOARD_SCALE = 0.25;
 const MAX_BOARD_SCALE = 3;
 const ZOOM_WHEEL_INTENSITY = 0.001;
+const INITIAL_BOARD_FIT_PADDING = 48;
+
+const FRAMEWORK_CARDS_WITH_FOOTERS = new Set<string>([
+  FRAMEWORK_CARD_IDS.demographic,
+  FRAMEWORK_CARD_IDS.psychographic,
+  FRAMEWORK_CARD_IDS.pain,
+  FRAMEWORK_CARD_IDS.passion,
+  FRAMEWORK_CARD_IDS.experience,
+  FRAMEWORK_CARD_IDS.skill,
+  FRAMEWORK_CARD_IDS.oneOff,
+  FRAMEWORK_CARD_IDS.ongoingContent,
+  FRAMEWORK_CARD_IDS.highValuePartners,
+  FRAMEWORK_CARD_IDS.reinvest,
+]);
 
 function clampBoardScale(scale: number) {
   return Math.min(MAX_BOARD_SCALE, Math.max(MIN_BOARD_SCALE, scale));
+}
+
+function getFrameworkPillarSize(pillar: Pillar): PillarSize {
+  let size = getPillarSize(pillar);
+  if (FRAMEWORK_CARDS_WITH_FOOTERS.has(pillar.id)) {
+    size = {
+      ...size,
+      height: Math.max(size.height, AUDIENCE_FRAMEWORK_CARD_MIN_HEIGHT),
+    };
+  }
+  return size;
+}
+
+function extendBoardRect(
+  bounds: BoardRect,
+  next: BoardRect,
+): BoardRect {
+  return {
+    left: Math.min(bounds.left, next.left),
+    top: Math.min(bounds.top, next.top),
+    right: Math.max(bounds.right, next.right),
+    bottom: Math.max(bounds.bottom, next.bottom),
+  };
+}
+
+function computeInitialBoardBounds(
+  staticPillars: Pillar[],
+  messageBoxPillar: Pillar | null,
+): BoardRect | null {
+  let bounds: BoardRect | null = null;
+
+  for (const pillar of staticPillars) {
+    const pillarBounds = getPillarBounds(pillar, getFrameworkPillarSize(pillar));
+    bounds = bounds ? extendBoardRect(bounds, pillarBounds) : pillarBounds;
+  }
+
+  if (messageBoxPillar) {
+    const messageBounds = getPillarBounds(
+      messageBoxPillar,
+      getPillarSize(messageBoxPillar),
+    );
+    bounds = bounds ? extendBoardRect(bounds, messageBounds) : messageBounds;
+  }
+
+  return bounds;
+}
+
+function fitBoardViewportToBounds(
+  viewportWidth: number,
+  viewportHeight: number,
+  bounds: BoardRect,
+  padding = INITIAL_BOARD_FIT_PADDING,
+): BoardViewport {
+  const contentWidth = bounds.right - bounds.left;
+  const contentHeight = bounds.bottom - bounds.top;
+  const scaleX = (viewportWidth - padding * 2) / contentWidth;
+  const scaleY = (viewportHeight - padding * 2) / contentHeight;
+  const scale = clampBoardScale(Math.min(scaleX, scaleY, 1));
+  const panX = (viewportWidth - contentWidth * scale) / 2 - bounds.left * scale;
+  const panY = (viewportHeight - contentHeight * scale) / 2 - bounds.top * scale;
+
+  return {
+    pan: { x: panX, y: panY },
+    scale,
+  };
 }
 
 type PanSession = {
@@ -586,6 +668,7 @@ export function BoardCanvas({
   const [ecosystemDialogOpen, setEcosystemDialogOpen] = useState(false);
   const [ecosystemDialogCategory, setEcosystemDialogCategory] =
     useState<EcosystemCategory | null>(null);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
   const { theme: boardTheme, setTheme: setBoardTheme } = useBoardTheme();
   const boardRef = useRef<HTMLDivElement>(null);
   const connectionDragRef = useRef<ConnectionDragState | null>(null);
@@ -595,6 +678,8 @@ export function BoardCanvas({
   const panSessionRef = useRef<PanSession | null>(null);
   const spacePressedRef = useRef(false);
   const suppressMarqueeRef = useRef(false);
+  const hasUserInteractedWithViewportRef = useRef(false);
+  const hasInitialFitRef = useRef(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -624,8 +709,6 @@ export function BoardCanvas({
   const reinvestPillars = getReinvestPillars(pillars);
   const hasContentPillars = contentPillars.length > 0;
   const hasMessage = message.trim().length > 0;
-  const showAudienceAreas = hasMessage;
-  const showMonetizationSubtree = hasMessage;
 
   const openEcosystemDialog = useCallback((category: EcosystemCategory) => {
     setEcosystemDialogCategory(category);
@@ -653,15 +736,8 @@ export function BoardCanvas({
   );
   const audienceCellHeight = PILLAR_CARD_HEIGHT;
   const boardPillars = useMemo(
-    () =>
-      pillars.filter(
-        (pillar) =>
-          isStaticCard(pillar) &&
-          ((!isUniquenessSubtreeCard(pillar) && !isMonetizationSubtreeCard(pillar)) ||
-            showAudienceAreas ||
-            (isMonetizationSubtreeCard(pillar) && showMonetizationSubtree)),
-      ),
-    [pillars, showAudienceAreas, showMonetizationSubtree],
+    () => pillars.filter((pillar) => isStaticCard(pillar)),
+    [pillars],
   );
   const demographicPillar = useMemo(
     () => pillars.find((pillar) => pillar.id === FRAMEWORK_CARD_IDS.demographic),
@@ -792,11 +868,7 @@ export function BoardCanvas({
   );
 
   const demographicBoxPillar = useMemo(() => {
-    if (
-      !showAudienceAreas ||
-      !demographicPillar ||
-      demographicPillars.length === 0
-    ) {
+    if (!demographicPillar || demographicPillars.length === 0) {
       return null;
     }
 
@@ -816,11 +888,10 @@ export function BoardCanvas({
     demographicPillar,
     demographicPillars.length,
     layoutObstacleRects,
-    showAudienceAreas,
   ]);
 
   const instagramCreatorsBoxPillar = useMemo(() => {
-    if (!showAudienceAreas || !psychographicPillar) {
+    if (!psychographicPillar) {
       return null;
     }
 
@@ -840,12 +911,10 @@ export function BoardCanvas({
     psychographicCreatorPillars.length,
     psychographicTraitPillars.length,
     psychographicPillar,
-    showAudienceAreas,
   ]);
 
   const psychographicTraitsBoxPillar = useMemo(() => {
     if (
-      !showAudienceAreas ||
       !psychographicPillar ||
       !instagramCreatorsBoxPillar ||
       psychographicTraitPillars.length === 0
@@ -869,11 +938,10 @@ export function BoardCanvas({
     psychographicBoxPosition,
     psychographicPillar,
     psychographicTraitPillars.length,
-    showAudienceAreas,
   ]);
 
   const painBoxPillar = useMemo(() => {
-    if (!showAudienceAreas || !painPillar || painPillars.length === 0) {
+    if (!painPillar || painPillars.length === 0) {
       return null;
     }
 
@@ -893,11 +961,10 @@ export function BoardCanvas({
     painBoxPosition,
     painPillar,
     painPillars.length,
-    showAudienceAreas,
   ]);
 
   const passionBoxPillar = useMemo(() => {
-    if (!showAudienceAreas || !passionPillar || passionPillars.length === 0) {
+    if (!passionPillar || passionPillars.length === 0) {
       return null;
     }
 
@@ -917,11 +984,10 @@ export function BoardCanvas({
     passionBoxPosition,
     passionPillar,
     passionPillars.length,
-    showAudienceAreas,
   ]);
 
   const experienceBoxPillar = useMemo(() => {
-    if (!showAudienceAreas || !experiencePillar || experiencePillars.length === 0) {
+    if (!experiencePillar || experiencePillars.length === 0) {
       return null;
     }
 
@@ -941,11 +1007,10 @@ export function BoardCanvas({
     experiencePillar,
     experiencePillars.length,
     layoutObstacleRects,
-    showAudienceAreas,
   ]);
 
   const skillBoxPillar = useMemo(() => {
-    if (!showAudienceAreas || !skillPillar || skillPillars.length === 0) {
+    if (!skillPillar || skillPillars.length === 0) {
       return null;
     }
 
@@ -962,14 +1027,13 @@ export function BoardCanvas({
   }, [
     audienceCellHeight,
     layoutObstacleRects,
-    showAudienceAreas,
     skillBoxPosition,
     skillPillar,
     skillPillars.length,
   ]);
 
   const oneOffBoxPillar = useMemo(() => {
-    if (!showAudienceAreas || !oneOffPillar || oneOffPillars.length === 0) {
+    if (!oneOffPillar || oneOffPillars.length === 0) {
       return null;
     }
 
@@ -989,11 +1053,10 @@ export function BoardCanvas({
     oneOffBoxPosition,
     oneOffPillar,
     oneOffPillars.length,
-    showAudienceAreas,
   ]);
 
   const ongoingContentBoxPillar = useMemo(() => {
-    if (!showAudienceAreas || !ongoingContentPillar || ongoingContentPillars.length === 0) {
+    if (!ongoingContentPillar || ongoingContentPillars.length === 0) {
       return null;
     }
 
@@ -1013,15 +1076,10 @@ export function BoardCanvas({
     ongoingContentBoxPosition,
     ongoingContentPillar,
     ongoingContentPillars.length,
-    showAudienceAreas,
   ]);
 
   const highValuePartnersBoxPillar = useMemo(() => {
-    if (
-      !showAudienceAreas ||
-      !highValuePartnersPillar ||
-      highValuePartnersPillars.length === 0
-    ) {
+    if (!highValuePartnersPillar || highValuePartnersPillars.length === 0) {
       return null;
     }
 
@@ -1041,11 +1099,10 @@ export function BoardCanvas({
     highValuePartnersPillar,
     highValuePartnersPillars.length,
     layoutObstacleRects,
-    showAudienceAreas,
   ]);
 
   const reinvestBoxPillar = useMemo(() => {
-    if (!showAudienceAreas || !reinvestPillar || reinvestPillars.length === 0) {
+    if (!reinvestPillar || reinvestPillars.length === 0) {
       return null;
     }
 
@@ -1065,7 +1122,6 @@ export function BoardCanvas({
     reinvestBoxPosition,
     reinvestPillar,
     reinvestPillars.length,
-    showAudienceAreas,
   ]);
 
   const demographicBoxSize = useMemo(
@@ -1233,7 +1289,7 @@ export function BoardCanvas({
 
   const connectionPillars = useMemo(() => {
     const next: Pillar[] = [...boardPillars];
-    if (hasMessage && messageBoxPillar) {
+    if (messageBoxPillar) {
       next.push(messageBoxPillar);
     }
     if (contentPillarsBoxPillar) {
@@ -1280,7 +1336,6 @@ export function BoardCanvas({
     demographicPillars.length,
     experienceBoxPillar,
     experiencePillars.length,
-    hasMessage,
     highValuePartnersBoxPillar,
     highValuePartnersPillars.length,
     instagramCreatorsBoxPillar,
@@ -1372,31 +1427,10 @@ export function BoardCanvas({
   const pillarSizes = useMemo(() => {
     const sizes: Record<string, PillarSize> = {};
     for (const pillar of selectableBoardElements) {
-      let size = getPillarSize(pillar);
-      if (
-        (showAudienceAreas &&
-          (pillar.id === FRAMEWORK_CARD_IDS.demographic ||
-            pillar.id === FRAMEWORK_CARD_IDS.psychographic ||
-            pillar.id === FRAMEWORK_CARD_IDS.pain ||
-            pillar.id === FRAMEWORK_CARD_IDS.passion ||
-            pillar.id === FRAMEWORK_CARD_IDS.experience ||
-            pillar.id === FRAMEWORK_CARD_IDS.skill)) ||
-        (showMonetizationSubtree &&
-          (pillar.id === FRAMEWORK_CARD_IDS.ecosystem ||
-            pillar.id === FRAMEWORK_CARD_IDS.oneOff ||
-            pillar.id === FRAMEWORK_CARD_IDS.ongoingContent ||
-            pillar.id === FRAMEWORK_CARD_IDS.highValuePartners ||
-            pillar.id === FRAMEWORK_CARD_IDS.reinvest))
-      ) {
-        size = {
-          ...size,
-          height: Math.max(size.height, AUDIENCE_FRAMEWORK_CARD_MIN_HEIGHT),
-        };
-      }
-      sizes[pillar.id] = size;
+      sizes[pillar.id] = getFrameworkPillarSize(pillar);
     }
     return sizes;
-  }, [selectableBoardElements, showAudienceAreas, showMonetizationSubtree]);
+  }, [selectableBoardElements]);
 
   const getStoredPillarSize = useCallback(
     (pillarId: string) => pillarSizes[pillarId] ?? getPillarSize({ id: pillarId, label: "", x: 0, y: 0 }),
@@ -1435,6 +1469,17 @@ export function BoardCanvas({
   );
 
   useEffect(() => {
+    if (!hasSeenWelcomeOnboarding()) {
+      setWelcomeOpen(true);
+    }
+  }, []);
+
+  const handleWelcomeDismiss = useCallback(() => {
+    markWelcomeOnboardingSeen();
+    setWelcomeOpen(false);
+  }, []);
+
+  useEffect(() => {
     connectionDragRef.current = connectionDrag;
   }, [connectionDrag]);
 
@@ -1450,8 +1495,56 @@ export function BoardCanvas({
     scaleRef.current = scale;
   }, [scale]);
 
+  const fitBoardToView = useCallback(() => {
+    const board = boardRef.current;
+    if (
+      !board ||
+      hasUserInteractedWithViewportRef.current ||
+      hasInitialFitRef.current
+    ) {
+      return;
+    }
+
+    const bounds = computeInitialBoardBounds(boardPillars, messageBoxPillar);
+    if (!bounds) {
+      return;
+    }
+
+    const viewportWidth = board.clientWidth;
+    const viewportHeight = board.clientHeight;
+    if (viewportWidth <= 0 || viewportHeight <= 0) {
+      return;
+    }
+
+    const nextViewport = fitBoardViewportToBounds(
+      viewportWidth,
+      viewportHeight,
+      bounds,
+    );
+    setPan(nextViewport.pan);
+    setScale(nextViewport.scale);
+    hasInitialFitRef.current = true;
+  }, [boardPillars, messageBoxPillar]);
+
+  useEffect(() => {
+    const board = boardRef.current;
+    if (!board) {
+      return;
+    }
+
+    fitBoardToView();
+
+    const observer = new ResizeObserver(() => {
+      fitBoardToView();
+    });
+    observer.observe(board);
+
+    return () => observer.disconnect();
+  }, [fitBoardToView]);
+
   const beginPan = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      hasUserInteractedWithViewportRef.current = true;
       panSessionRef.current = {
         pointerId: event.pointerId,
         startClientX: event.clientX,
@@ -1924,6 +2017,7 @@ export function BoardCanvas({
 
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
+      hasUserInteractedWithViewportRef.current = true;
 
       const rect = board.getBoundingClientRect();
       const pointerX = event.clientX - rect.left;
@@ -2103,20 +2197,6 @@ export function BoardCanvas({
             }
           }}
         >
-          {!hasMessage && !hasContentPillars ? (
-            <div
-              data-export-hide
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-8"
-            >
-              <div className="board-empty-hint max-w-sm rounded-xl border border-dashed p-6 text-center">
-                <p className="board-text text-sm font-medium">Start with your message</p>
-                <p className="board-text-muted mt-2 text-sm">
-                  Use the Message box under WHAT to generate your vision, then create
-                  content pillars.
-                </p>
-              </div>
-            </div>
-          ) : null}
           <div
             data-board-layer
             className="relative h-full w-full"
@@ -2174,7 +2254,7 @@ export function BoardCanvas({
                 onRemovePillar={(id) => onRemovePillars([id])}
               />
             ) : null}
-            {showAudienceAreas && demographicPillars.length > 0 ? (
+            {demographicPillars.length > 0 ? (
               <AudiencePillarsBox
                 boxId={DEMOGRAPHIC_BOX_ID}
                 title="Demographic"
@@ -2197,7 +2277,7 @@ export function BoardCanvas({
                 onRemovePillar={(id) => onRemovePillars([id])}
               />
             ) : null}
-            {showAudienceAreas && psychographicCreatorPillars.length > 0 ? (
+            {psychographicCreatorPillars.length > 0 ? (
               <AudiencePillarsBox
                 boxId={INSTAGRAM_CREATORS_BOX_ID}
                 title="Creators"
@@ -2220,7 +2300,7 @@ export function BoardCanvas({
                 onRemovePillar={(id) => onRemovePillars([id])}
               />
             ) : null}
-            {showAudienceAreas && psychographicTraitsBoxPillar ? (
+            {psychographicTraitsBoxPillar ? (
               <AudiencePillarsBox
                 boxId={PSYCHOGRAPHIC_BOX_ID}
                 title="Psychological & behavioral traits"
@@ -2243,7 +2323,7 @@ export function BoardCanvas({
                 onRemovePillar={(id) => onRemovePillars([id])}
               />
             ) : null}
-            {showAudienceAreas && painPillars.length > 0 ? (
+            {painPillars.length > 0 ? (
               <AudiencePillarsBox
                 boxId={PAIN_BOX_ID}
                 title="Pain points"
@@ -2266,7 +2346,7 @@ export function BoardCanvas({
                 onRemovePillar={(id) => onRemovePillars([id])}
               />
             ) : null}
-            {showAudienceAreas && passionPillars.length > 0 ? (
+            {passionPillars.length > 0 ? (
               <AudiencePillarsBox
                 boxId={PASSION_BOX_ID}
                 title="Passion points"
@@ -2289,7 +2369,7 @@ export function BoardCanvas({
                 onRemovePillar={(id) => onRemovePillars([id])}
               />
             ) : null}
-            {showAudienceAreas && experiencePillars.length > 0 ? (
+            {experiencePillars.length > 0 ? (
               <AudiencePillarsBox
                 boxId={EXPERIENCE_BOX_ID}
                 title="Experience"
@@ -2312,7 +2392,7 @@ export function BoardCanvas({
                 onRemovePillar={(id) => onRemovePillars([id])}
               />
             ) : null}
-            {showAudienceAreas && skillPillars.length > 0 ? (
+            {skillPillars.length > 0 ? (
               <AudiencePillarsBox
                 boxId={SKILL_BOX_ID}
                 title="Skills"
@@ -2335,7 +2415,7 @@ export function BoardCanvas({
                 onRemovePillar={(id) => onRemovePillars([id])}
               />
             ) : null}
-            {showAudienceAreas && oneOffPillars.length > 0 ? (
+            {oneOffPillars.length > 0 ? (
               <AudiencePillarsBox
                 boxId={ONE_OFF_BOX_ID}
                 title="One-off"
@@ -2358,7 +2438,7 @@ export function BoardCanvas({
                 onRemovePillar={(id) => onRemovePillars([id])}
               />
             ) : null}
-            {showAudienceAreas && ongoingContentPillars.length > 0 ? (
+            {ongoingContentPillars.length > 0 ? (
               <AudiencePillarsBox
                 boxId={ONGOING_CONTENT_BOX_ID}
                 title="Ongoing content"
@@ -2381,7 +2461,7 @@ export function BoardCanvas({
                 onRemovePillar={(id) => onRemovePillars([id])}
               />
             ) : null}
-            {showAudienceAreas && highValuePartnersPillars.length > 0 ? (
+            {highValuePartnersPillars.length > 0 ? (
               <AudiencePillarsBox
                 boxId={HIGH_VALUE_PARTNERS_BOX_ID}
                 title="High value partners"
@@ -2404,7 +2484,7 @@ export function BoardCanvas({
                 onRemovePillar={(id) => onRemovePillars([id])}
               />
             ) : null}
-            {showAudienceAreas && reinvestPillars.length > 0 ? (
+            {reinvestPillars.length > 0 ? (
               <AudiencePillarsBox
                 boxId={REINVEST_BOX_ID}
                 title="Reinvest"
@@ -2507,7 +2587,6 @@ export function BoardCanvas({
                 onResizeStart={onResizeStart}
                 onResizeEnd={onResizeEnd}
                 footer={
-                  showAudienceAreas &&
                   pillar.id === FRAMEWORK_CARD_IDS.demographic ? (
                     <AudienceFrameworkFooter
                       canBuildSuggestions={hasContentPillars}
@@ -2516,8 +2595,7 @@ export function BoardCanvas({
                       onGenerate={onGenerateDemographic}
                       onAddManually={onAddDemographicPillar}
                     />
-                  ) : showAudienceAreas &&
-                    pillar.id === FRAMEWORK_CARD_IDS.psychographic ? (
+                  ) : pillar.id === FRAMEWORK_CARD_IDS.psychographic ? (
                     <PsychographicFrameworkFooter
                       canBuildSuggestions={hasContentPillars}
                       isGenerating={isGeneratingPsychographic}
@@ -2526,7 +2604,7 @@ export function BoardCanvas({
                       onAddCreator={onAddInstagramCreatorPillar}
                       onAddTrait={onAddPsychographicTraitPillar}
                     />
-                  ) : showAudienceAreas && pillar.id === FRAMEWORK_CARD_IDS.pain ? (
+                  ) : pillar.id === FRAMEWORK_CARD_IDS.pain ? (
                     <PainFrameworkFooter
                       canBuildSuggestions={hasContentPillars}
                       isGenerating={isGeneratingPainPoints}
@@ -2534,7 +2612,7 @@ export function BoardCanvas({
                       onBuildPainPoints={() => setPainPointsDialogOpen(true)}
                       onAddManually={onAddPainPillar}
                     />
-                  ) : showAudienceAreas && pillar.id === FRAMEWORK_CARD_IDS.passion ? (
+                  ) : pillar.id === FRAMEWORK_CARD_IDS.passion ? (
                     <PassionFrameworkFooter
                       canBuildSuggestions={hasContentPillars}
                       isGenerating={isGeneratingPassionPoints}
@@ -2542,7 +2620,7 @@ export function BoardCanvas({
                       onBuildPassionPoints={() => setPassionPointsDialogOpen(true)}
                       onAddManually={onAddPassionPillar}
                     />
-                  ) : showAudienceAreas && pillar.id === FRAMEWORK_CARD_IDS.experience ? (
+                  ) : pillar.id === FRAMEWORK_CARD_IDS.experience ? (
                     <ExperienceFrameworkFooter
                       canBuildSuggestions={hasContentPillars}
                       isGenerating={isGeneratingExperience}
@@ -2550,7 +2628,7 @@ export function BoardCanvas({
                       onBuildExperience={() => setExperienceDialogOpen(true)}
                       onAddManually={onAddExperiencePillar}
                     />
-                  ) : showAudienceAreas && pillar.id === FRAMEWORK_CARD_IDS.skill ? (
+                  ) : pillar.id === FRAMEWORK_CARD_IDS.skill ? (
                     <SkillFrameworkFooter
                       canBuildSuggestions={hasContentPillars}
                       isGenerating={isGeneratingSkills}
@@ -2558,22 +2636,19 @@ export function BoardCanvas({
                       onBuildSkills={() => setSkillsDialogOpen(true)}
                       onAddManually={onAddSkillPillar}
                     />
-                  ) : showMonetizationSubtree &&
-                    pillar.id === FRAMEWORK_CARD_IDS.oneOff ? (
+                  ) : pillar.id === FRAMEWORK_CARD_IDS.oneOff ? (
                     renderMonetizationCategoryFooter("oneOff", onAddOneOffPillar)
-                  ) : showMonetizationSubtree &&
-                    pillar.id === FRAMEWORK_CARD_IDS.ongoingContent ? (
+                  ) : pillar.id === FRAMEWORK_CARD_IDS.ongoingContent ? (
                     renderMonetizationCategoryFooter(
                       "ongoingContent",
                       onAddOngoingContentPillar,
                     )
-                  ) : showMonetizationSubtree &&
-                    pillar.id === FRAMEWORK_CARD_IDS.highValuePartners ? (
+                  ) : pillar.id === FRAMEWORK_CARD_IDS.highValuePartners ? (
                     renderMonetizationCategoryFooter(
                       "highValuePartners",
                       onAddHighValuePartnersPillar,
                     )
-                  ) : showMonetizationSubtree && pillar.id === FRAMEWORK_CARD_IDS.reinvest ? (
+                  ) : pillar.id === FRAMEWORK_CARD_IDS.reinvest ? (
                     renderMonetizationCategoryFooter("reinvest", onAddReinvestPillar)
                   ) : undefined
                 }
@@ -2582,6 +2657,10 @@ export function BoardCanvas({
           </div>
         </div>
       </section>
+      <WelcomeOnboardingModal
+        open={welcomeOpen && !isDownloading}
+        onDismiss={handleWelcomeDismiss}
+      />
       <BuildPainPointsDialog
         open={painPointsDialogOpen}
         isGenerating={isGeneratingPainPoints}

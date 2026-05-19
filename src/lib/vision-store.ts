@@ -12,6 +12,7 @@ import {
   isValidInstagramCreatorsBoxPosition,
   isValidMessageBoxPosition,
   isValidPsychographicTraitsBoxPosition,
+  AUDIENCE_FRAMEWORK_CARD_MIN_HEIGHT,
   MESSAGE_BOX_MIN_HEIGHT,
   MESSAGE_BOX_WIDTH,
   PILLAR_CARD_HEIGHT,
@@ -204,7 +205,9 @@ const MONETIZATION_FOUR_ROW_START_X = 948;
 const MONETIZATION_FOUR_ROW_SECOND_X =
   MONETIZATION_FOUR_ROW_START_X + PILLAR_CARD_WIDTH + MONETIZATION_SUBTREE_GAP;
 const MONETIZATION_FOUR_SECOND_ROW_Y =
-  MONETIZATION_FOUR_ROW_Y + PILLAR_CARD_HEIGHT + MONETIZATION_SUBTREE_GAP;
+  MONETIZATION_FOUR_ROW_Y +
+  AUDIENCE_FRAMEWORK_CARD_MIN_HEIGHT +
+  MONETIZATION_SUBTREE_GAP;
 
 /** MONETIZATION subtree static pillars (shown with audience areas). */
 export const MONETIZATION_SUBTREE_CARDS = [
@@ -1632,12 +1635,8 @@ export function createDefaultMonetizationSubtreeConnections(): Connection[] {
 export function ensureWhatMessageConnection(
   connections: Connection[],
   pillars: Pillar[],
-  hasMessage: boolean,
+  _hasMessage: boolean,
 ): Connection[] {
-  if (!hasMessage) {
-    return connections;
-  }
-
   const whatId = FRAMEWORK_CARD_IDS.what;
   if (!pillars.some((pillar) => pillar.id === whatId)) {
     return connections;
@@ -1837,6 +1836,13 @@ export function createEmptyVision(): CreatorVision {
       ...createDefaultWhoSubtreeConnections(),
       ...createDefaultUniquenessSubtreeConnections(),
       ...createDefaultMonetizationSubtreeConnections(),
+      {
+        id: `default-${FRAMEWORK_CARD_IDS.what}-${MESSAGE_BOX_ID}`,
+        fromPillarId: FRAMEWORK_CARD_IDS.what,
+        fromAnchor: "bottom",
+        toPillarId: MESSAGE_BOX_ID,
+        toAnchor: "top",
+      },
     ],
     updatedAt: Date.now(),
   };
