@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { saveSharedBoard } from "@/lib/shared-board-storage";
+import {
+  saveSharedBoard,
+  ShareStorageNotConfiguredError,
+} from "@/lib/shared-board-storage";
 import type { CreatorVision } from "@/lib/vision-store";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -37,10 +40,13 @@ export async function POST(request: Request) {
   try {
     const id = await saveSharedBoard(body.vision);
     return NextResponse.json({ id });
-  } catch {
-    return NextResponse.json(
-      { error: "Could not save shared board. Try again later." },
-      { status: 500 },
-    );
+  } catch (error) {
+    if (error instanceof ShareStorageNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
+
+    const message =
+      error instanceof Error ? error.message : "Could not save shared board. Try again later.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
